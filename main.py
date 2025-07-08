@@ -50,6 +50,7 @@ class VoiceAssistant:
             self.is_processing = True
 
         try:
+            talk_stream(" What can I do for you?")
             print("🎤 Trigger detected — start listening...")
             self.process_voice_command()
         except Exception as e:
