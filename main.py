@@ -20,18 +20,17 @@ class VoiceAssistant:
         # Initialize all modules
         self.recorder = AudioRecorder()
         self.llm = llm.LMStudioResponder(
-            model_name="mistral-7b-instruct-v0.1",
+            model_name="mistralai/mistral-7b-instruct-v0.3",
             system_prompt="Respond with 1 sentence only."
         )
         self.stt_app = stt.SpeechToTextApplication("audio")
         self.classifier = classify.IntentClassifier()
 
-        # Download wake word model once (if needed)
-        WakeWordDetector.download_models()
-
         # Initialize wake word detector
-        self.detector = WakeWordDetector(['alexa'])
-        self.detector.register_callback('alexa', self.on_wake_word_detected)
+        self.detector = WakeWordDetector(
+            wakeword_models=["models/hey_lucy.onnx"]
+        )
+        self.detector.register_callback("hey_lucy", self.on_wake_word_detected)
 
         # Auto-select default microphone
         default_mic = self.recorder.mic_selector.get_default_microphone()
@@ -116,7 +115,7 @@ class VoiceAssistant:
 
     def run(self):
         """Start system with wake word only"""
-        print("✅ Voice assistant initialized. Waiting for wake word ('alexa')...")
+        print("✅ Voice assistant initialized. Waiting for wake word ('Hey Lucy')...")
 
         try:
             # Start wake word detector in a separate thread to avoid blocking
