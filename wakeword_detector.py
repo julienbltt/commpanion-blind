@@ -1,10 +1,9 @@
 import numpy as np
 import pyaudio
 from openwakeword.model import Model
-from openwakeword.utils import download_models
 import threading
 import queue
-import os
+import time
 from typing import Callable, Optional, Dict, Any
 import logging
 
@@ -106,20 +105,9 @@ class WakeWordDetector:
                 continue
             except Exception as e:
                 self.logger.error(f"Erreur dans le traitement audio: {e}")
-
-    @classmethod
-    def download_models(self):
-        if not os.path.exists("resources/models"):
-            print("Download et installation de openWakeWord")
-            # One-time download of all pre-trained models (or only select models)
-            download_models()
-            print("✅ openWakeWord installé avec succès\n")
     
     def start(self):
         """Démarre l'écoute du mot de réveil."""
-
-        print("Démarrage du détecteur de mot de réveil")
-
         if self.is_listening:
             self.logger.warning("Le détecteur est déjà en cours d'exécution")
             return
@@ -177,7 +165,6 @@ class WakeWordDetector:
         
     def cleanup(self):
         """Nettoyage des ressources."""
-        if self.stream is not None:
-            self.stream.stop_stream()
-            self.stream.close()
-            self.stream = None
+        self.stop()
+        if hasattr(self, 'audio'):
+            self.audio.terminate()
