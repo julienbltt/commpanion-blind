@@ -26,7 +26,9 @@ class IntentClassifier:
                 "What does the writing say on that sign?",
                 "Tell me exactly what the label says.",
                 "Could you read the message displayed in front of me?",
-                "What are the words written on this surface?"
+                "What are the words written on this surface?"#, #new prompts
+                #"Read this page",
+                #"Read the words shown here"
             ],
             "describe_scene": [
                 "Can you describe what's happening around me?",
@@ -34,7 +36,9 @@ class IntentClassifier:
                 "Give me a detailed description of the scene.",
                 "Describe the setting and objects nearby.",
                 "Tell me what the surroundings look like.",
-                "What's visible in the current environment?"
+                "What's visible in the current environment?"#,#new prompts
+                #"Describe what you see",
+                #"What does this room look like?"
             ],
             "activate_detection_collision": [
                 "Please enable obstacle and hazard detection.",

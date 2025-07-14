@@ -6,9 +6,14 @@ import stt
 from recorder import AudioRecorder
 import classify
 from tts import talk_stream
+from blipDescribe import initialize_blip, generate_caption, capture_image
+
+
 
 class VoiceAssistant:
     def __init__(self):
+        self.blip_processor, self.blip_model, self.blip_device = initialize_blip()
+
         self.glasses = None
         self.is_processing = False
         self.processing_lock = threading.Lock()
@@ -20,17 +25,18 @@ class VoiceAssistant:
         # Initialize all modules
         self.recorder = AudioRecorder()
         self.llm = llm.LMStudioResponder(
-            model_name="mistralai/mistral-7b-instruct-v0.3",
+            model_name="mistral-7b-instruct-v0.3",
             system_prompt="Respond with 1 sentence only."
         )
         self.stt_app = stt.SpeechToTextApplication("audio")
         self.classifier = classify.IntentClassifier()
 
+        # Download wake word model once (if needed)
+        WakeWordDetector.download_models()
+
         # Initialize wake word detector
-        self.detector = WakeWordDetector(
-            wakeword_models=["models/hey_lucy.onnx"]
-        )
-        self.detector.register_callback("hey_lucy", self.on_wake_word_detected)
+        self.detector = WakeWordDetector(['alexa'])
+        self.detector.register_callback('alexa', self.on_wake_word_detected)
 
         # Auto-select default microphone
         default_mic = self.recorder.mic_selector.get_default_microphone()
@@ -58,6 +64,7 @@ class VoiceAssistant:
             with self.processing_lock:
                 self.is_processing = False
             print("✅ Ready for next command!\n")
+            talk_stream("Ready for next command.")
 
     def process_voice_command(self):
         """Record, transcribe, and handle LLM response"""
@@ -89,7 +96,18 @@ class VoiceAssistant:
             intent,confidence = self.classifier.classify(prompt)
 
             if intent == "read_text":
-                print("📖 Intent recognized: Reading text...")
+                print("📖 Intent recognised: Reading text...")
+            
+            #=================================Blip Code================================
+            elif intent == "describe_scene":
+                print("Intent recognised: Analysing Scene...")
+                image_path = capture_image()
+                if image_path:
+                    caption = generate_caption(image_path, self.blip_processor, self.blip_model, self.blip_device)
+                    talk_stream(caption)
+                else:
+                    talk_stream("I couldn't capture the image.")
+            #===========================End Blip Code==================================
             else:
                 print(f"🧠 Intent recognized: {intent}")
                 response = "For the momnent I can only read text. If you want me to read text, please ask me, aiming the glasses at the text you want me to read."
@@ -115,7 +133,7 @@ class VoiceAssistant:
 
     def run(self):
         """Start system with wake word only"""
-        print("✅ Voice assistant initialized. Waiting for wake word ('Hey Lucy')...")
+        print("✅ Voice assistant initialized. Waiting for wake word ('alexa')...")
 
         try:
             # Start wake word detector in a separate thread to avoid blocking

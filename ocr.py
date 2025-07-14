@@ -7,7 +7,7 @@ Compatible with Snapdragon X Plus - Windows ARM64
 Auteur: Julien Balderiotti
 Date: 07/07/2025
 """
-
+""""""
 import pytesseract
 from PIL import Image, ImageEnhance, ImageFilter, ImageDraw, ImageFont
 import cv2
