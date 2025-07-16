@@ -1,10 +1,10 @@
 import threading
-import llm
+from llm import LMStudioResponder
 from wakeword_detector import WakeWordDetector
 import time
-import stt
+from stt import SpeechToTextApplication
 from recorder import AudioRecorder
-import classify
+from classify import IntentClassifier
 from tts import talk_stream
 
 class VoiceAssistant:
@@ -17,21 +17,20 @@ class VoiceAssistant:
         self.VENDOR_ID = 0x17EF
         self.PRODUCT_ID = 0xB813
 
-        # Initialize all modules
+        # Initialise all modules
         self.recorder = AudioRecorder()
-        self.llm = llm.LMStudioResponder(
+        self.llm = LMStudioResponder(
             model_name="mistralai/mistral-7b-instruct-v0.3",
             system_prompt="Respond with 1 sentence only."
         )
-        self.stt_app = stt.SpeechToTextApplication("audio")
-        self.classifier = classify.IntentClassifier()
+        self.stt_app = SpeechToTextApplication("audio")
+        self.classifier = IntentClassifier()
 
-        # Initialize wake word detector
+        WakeWordDetector.download_models() # Download default models if not present
         self.detector = WakeWordDetector(
-            wakeword_models=["models/hey_lucy.onnx"]
+            wakeword_models=["models\hey_lucy.onnx"]
         )
         self.detector.register_callback("hey_lucy", self.on_wake_word_detected)
-
         # Auto-select default microphone
         default_mic = self.recorder.mic_selector.get_default_microphone()
         if default_mic:
@@ -41,7 +40,7 @@ class VoiceAssistant:
             print("❌ No microphones available.")
 
     def on_voice_trigger(self, event=None):
-        """Callback for button or wake word"""
+        """Callback for wake word"""
         with self.processing_lock:
             if self.is_processing:
                 print("🔄 Already processing. Please wait...")
@@ -62,7 +61,7 @@ class VoiceAssistant:
     def process_voice_command(self):
         """Record, transcribe, and handle LLM response"""
         try:
-            time.sleep(0.2)  # Small delay to stabilize
+            time.sleep(0.1)  # Small delay to stabilize
 
             print("Starting recording...")
             self.recorder.start_recording()
@@ -88,14 +87,21 @@ class VoiceAssistant:
 
             intent,confidence = self.classifier.classify(prompt)
 
-            if intent == "read_text":
-                print("📖 Intent recognized: Reading text...")
-            else:
-                print(f"🧠 Intent recognized: {intent}")
-                response = "For the momnent I can only read text. If you want me to read text, please ask me, aiming the glasses at the text you want me to read."
-                talk_stream(response)
-                tac = time.time()
-                print(f"Total time: {(tac - tic):.2f} seconds")
+            match intent:
+                case "read_text":
+                    talk_stream("Classifying intent as 'read text'.")
+                    # Add reading text functionality here
+                case "locate_object":
+                    talk_stream("Classifying intent as 'locate object'.")  
+                    # Add object locating functionality here
+                case "describe_scene":
+                    talk_stream("Classifying intent as 'describe scene'.")
+                    # Add scene description functionality here
+                case "activate_detection_collision":
+                    talk_stream("Classifying intent as 'activate detection collision'.")
+                    # Add collision detection functionality here
+                case "other":
+                    talk_stream("I don't understand that command. Please try again.")
 
         except Exception as e:
             print(f"❌ Error in voice processing: {e}")

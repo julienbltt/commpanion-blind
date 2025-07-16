@@ -36,6 +36,8 @@ class IntentClassifier:
                 "Describe the setting and objects nearby.",
                 "Tell me what the surroundings look like.",
                 "What's visible in the current environment?",
+                "What is on my left",
+                "What is on my right",
                 "What does this room look like?"
             ],
             "activate_detection_collision": [
