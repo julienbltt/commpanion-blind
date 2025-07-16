@@ -21,12 +21,13 @@ class IntentClassifier:
         # Demand templates by category
         self.demand_templates = {
             "read_text": [
-                "Can you read aloud what's written here?",
-                "Please read the text shown on the screen.",
-                "What does the writing say on that sign?",
-                "Tell me exactly what the label says.",
-                "Could you read the message displayed in front of me?",
-                "What are the words written on this surface?"
+            "Can you read aloud what's written here?",
+            "Please read the text shown on the screen.",
+            "What does the writing say on that sign?",
+            "Tell me exactly what the label says.",
+            "Could you read the message displayed in front of me?",
+            "What are the words written on this surface?",
+            "Read this text for me, please."
             ],
             "describe_scene": [
                 "Can you describe what's happening around me?",
@@ -34,7 +35,8 @@ class IntentClassifier:
                 "Give me a detailed description of the scene.",
                 "Describe the setting and objects nearby.",
                 "Tell me what the surroundings look like.",
-                "What's visible in the current environment?"
+                "What's visible in the current environment?",
+                "What does this room look like?"
             ],
             "activate_detection_collision": [
                 "Please enable obstacle and hazard detection.",
@@ -43,6 +45,13 @@ class IntentClassifier:
                 "Activate sensors to detect anything I might bump into.",
                 "Can you switch on the obstacle warning system?",
                 "Enable collision alerts and monitoring, please."
+            ],
+            "locate_object": [
+                "Where is the phonne?",
+                "Can you find my keys?",
+                "Help me locate my wallet."
+                "Where did I leave my glasses?",
+                "Can you track down my backpack?"
             ],
             "other": [
                 "Play some background music.",
@@ -248,8 +257,6 @@ class IntentClassifier:
         """Clean up model resources"""
         try:
             if self.model:
-                # SentenceTransformer doesn't have a specific cleanup method
-                # but we can release references
                 self.model = None
                 self.category_embeddings = {}
                 print("✅ Classifier resources cleaned up")
