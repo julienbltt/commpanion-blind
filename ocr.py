@@ -1,13 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Complet OCR Script with Tesseract
-Compatible with Snapdragon X Plus - Windows ARM64
-
-Auteur: Julien Balderiotti
-Date: 07/07/2025
-"""
-
 import pytesseract
 from PIL import Image, ImageEnhance, ImageFilter, ImageDraw, ImageFont
 import cv2
@@ -16,575 +6,877 @@ import os
 import sys
 from pathlib import Path
 import time
+import logging
+from typing import Dict, List, Optional, Union, Tuple, Any
+from dataclasses import dataclass
+from enum import Enum
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+
+class EnhancementLevel(Enum):
+    """Image enhancement levels for preprocessing."""
+    LIGHT = "light"
+    MEDIUM = "medium"
+    STRONG = "strong"
+    CUSTOM = "custom"
+
+
+class PSMMode(Enum):
+    """Page Segmentation Mode constants for Tesseract."""
+    AUTO_OSD = 0
+    AUTO_WITH_OSD = 1
+    AUTO_WITHOUT_OSD = 2
+    AUTO = 3
+    SINGLE_COLUMN = 4
+    SINGLE_BLOCK_VERT_TEXT = 5
+    SINGLE_BLOCK = 6
+    SINGLE_TEXT_LINE = 7
+    SINGLE_WORD = 8
+    CIRCLE_WORD = 9
+    SINGLE_CHARACTER = 10
+    SPARSE_TEXT = 11
+    SPARSE_TEXT_OSD = 12
+    RAW_LINE = 13
+
+
+@dataclass
+class OCRResult:
+    """Data class to store OCR detection results."""
+    text: str
+    confidence: float
+    x: int
+    y: int
+    width: int
+    height: int
+    level: int
+
+
+@dataclass
+class ImageInfo:
+    """Data class to store image information."""
+    path: str
+    size: Tuple[int, int]
+    mode: str
+    file_size_kb: float
+
+
+@dataclass
+class AnalysisStats:
+    """Data class to store analysis statistics."""
+    total_characters: int
+    total_words: int
+    detected_elements: int
+    average_confidence: float
+
 
 class TesseractOCR:
-    def __init__(self, tesseract_path=None):
-        """
-        Initialiser Tesseract OCR
-        
-        Args:
-            tesseract_path (str): Chemin vers tesseract.exe (optionnel si dans PATH)
-        """
-        # Configuration automatique du chemin Tesseract
-        if tesseract_path:
-            pytesseract.pytesseract.tesseract_cmd = tesseract_path
-        else:
-            # Essayer les chemins par défaut
-            possible_paths = [
-                r'C:\Program Files\Tesseract-OCR\tesseract.exe',
-                r'C:\Program Files (x86)\Tesseract-OCR\tesseract.exe',
-                'tesseract'  # Si dans PATH
-            ]
-            
-            for path in possible_paths:
-                try:
-                    pytesseract.pytesseract.tesseract_cmd = path
-                    # Test rapide
-                    pytesseract.get_tesseract_version()
-                    print(f"✅ Tesseract trouvé : {path}")
-                    break
-                except:
-                    continue
-            else:
-                raise Exception("❌ Tesseract non trouvé. Vérifiez l'installation.")
-        
-        # Vérifier les langues disponibles
-        try:
-            self.available_languages = pytesseract.get_languages()
-            print(f"📝 Langues disponibles : {self.available_languages}")
-        except:
-            self.available_languages = ['eng']
-            print("⚠️  Impossible de récupérer la liste des langues, utilisation de 'eng' par défaut")
+    """
+    Professional Tesseract OCR wrapper with advanced preprocessing and analysis capabilities.
     
-    def preprocess_image(self, image, enhancement_level='medium'):
+    This class provides a comprehensive interface for optical character recognition
+    using Tesseract OCR engine with optimized preprocessing and detailed analysis features.
+    """
+    
+    def __init__(self, tesseract_path: Optional[str] = None, language_cache: bool = True, camera_id: int = 0) -> None:
         """
-        Préprocessing intelligent de l'image
+        Initialize Tesseract OCR with automatic path detection and configuration.
         
         Args:
-            image: Image PIL ou chemin vers fichier
-            enhancement_level: 'light', 'medium', 'strong'
+            tesseract_path: Optional custom path to tesseract executable
+            language_cache: Enable language list caching for performance
+            camera_id: Default camera ID for image capture
+            
+        Raises:
+            Exception: If Tesseract installation is not found
+        """
+        self._configure_tesseract_path(tesseract_path)
+        self._available_languages = self._get_available_languages() if language_cache else None
+        self._image_cache: Dict[str, Image.Image] = {}
+        self.camera_id = camera_id  
+        
+    def _configure_tesseract_path(self, custom_path: Optional[str]) -> None:
+        """
+        Configure Tesseract executable path with automatic detection.
+        
+        Args:
+            custom_path: Optional custom path to tesseract executable
+            
+        Raises:
+            Exception: If Tesseract is not found in any standard location
+        """
+        if custom_path:
+            pytesseract.pytesseract.tesseract_cmd = custom_path
+            return
+            
+        # Standard installation paths for Windows
+        standard_paths = [
+            r'C:\Program Files\Tesseract-OCR\tesseract.exe',
+            r'C:\Program Files (x86)\Tesseract-OCR\tesseract.exe',
+            'tesseract'  # PATH environment variable
+        ]
+        
+        for path in standard_paths:
+            try:
+                pytesseract.pytesseract.tesseract_cmd = path
+                pytesseract.get_tesseract_version()  # Test if working
+                logger.info(f"Tesseract found at: {path}")
+                return
+            except Exception:
+                continue
+                
+        raise Exception("Tesseract OCR not found. Please verify installation.")
+    
+    def _get_available_languages(self) -> List[str]:
+        """
+        Retrieve and cache available Tesseract languages.
         
         Returns:
-            Image PIL préprocessée
+            List of available language codes
         """
-        # Charger l'image si c'est un chemin
-        if isinstance(image, (str, Path)):
-            image = Image.open(image)
+        try:
+            languages = pytesseract.get_languages()
+            logger.info(f"Available languages: {', '.join(languages)}")
+            return languages
+        except Exception as e:
+            logger.warning(f"Failed to retrieve language list: {e}")
+            return ['eng']  # Fallback to English
         
-        # Convertir en PIL Image si c'est un array numpy
-        if isinstance(image, np.ndarray):
-            image = Image.fromarray(image)
+    def _deskew_image(self, img_array: np.ndarray) -> np.ndarray:
+        """
+        Correction automatique de l'inclinaison du texte.
         
-        print(f"📸 Image originale : {image.size} pixels, mode : {image.mode}")
+        Args:
+            img_array: Image en array NumPy
+            
+        Returns:
+            Image corrigée
+        """
+        try:
+            # Détection des contours pour trouver l'inclinaison
+            edges = cv2.Canny(img_array, 50, 150, apertureSize=3)
+            lines = cv2.HoughLines(edges, 1, np.pi/180, threshold=100)
+            
+            if lines is not None:
+                # Calcul de l'angle moyen
+                angles = []
+                for rho, theta in lines[:10]:  # Prendre les 10 premières lignes
+                    angle = theta * 180 / np.pi
+                    # Normaliser l'angle
+                    if angle > 90:
+                        angle = angle - 180
+                    angles.append(angle)
+                
+                if angles:
+                    avg_angle = np.mean(angles)
+                    
+                    # Correction seulement si l'inclinaison est significative
+                    if abs(avg_angle) > 0.5:  # Plus de 0.5 degrés
+                        height, width = img_array.shape
+                        center = (width // 2, height // 2)
+                        matrix = cv2.getRotationMatrix2D(center, avg_angle, 1.0)
+                        corrected = cv2.warpAffine(img_array, matrix, (width, height), 
+                                                 flags=cv2.INTER_CUBIC, 
+                                                 borderValue=255)
+                        logger.debug(f"Correction d'inclinaison: {avg_angle:.2f}°")
+                        return corrected
         
-        # Convertir en niveaux de gris
+        except Exception as e:
+            logger.debug(f"Correction d'inclinaison échouée: {e}")
+        
+        return img_array
+
+    def preprocess_image_custom(self, 
+                        image_input: Union[str, Path, Image.Image, np.ndarray],
+                        target_height: int = 800,
+                        apply_deskew: bool = True,
+                        block_size: int = 11,
+                        c_value: int = 2) -> Image.Image:
+        """
+        Preprocessing optimisé pour une meilleure reconnaissance OCR.
+        
+        Args:
+            image_input: Image d'entrée
+            target_height: Hauteur cible minimale
+            apply_deskew: Correction de l'inclinaison
+            block_size: Taille du bloc pour binarisation adaptative
+            c_value: Constante pour binarisation adaptative
+            
+        Returns:
+            Image préprocessée optimisée pour OCR
+        """
+        image = self._load_image(image_input)
+        original_size = image.size
+        
+        # 1. Conversion en niveaux de gris
         if image.mode != 'L':
             image = image.convert('L')
         
-        # Redimensionner si trop petite (OCR fonctionne mieux sur images plus grandes)
-        min_size = 300
+        # 2. Redimensionnement intelligent
+        if image.height < target_height:
+            ratio = target_height / image.height
+            new_size = (int(image.width * ratio), target_height)
+            image = image.resize(new_size, Image.Resampling.LANCZOS)
+            logger.debug(f"Image redimensionnée de {original_size} vers {new_size}")
+        
+        # 3. Conversion en array NumPy pour les traitements OpenCV
+        img_array = np.array(image)
+        
+        # 4. Détection et inversion automatique (texte blanc sur fond noir)
+        mean_val = np.mean(img_array)
+        if mean_val < 127:
+            img_array = 255 - img_array
+            logger.debug("Image inversée (texte blanc détecté)")
+        
+        # 5. Débruitage léger avec filtre gaussien
+        img_array = cv2.GaussianBlur(img_array, (3, 3), 0)
+        
+        # 6. Binarisation adaptative (plus efficace que l'ajustement de contraste)
+        binary = cv2.adaptiveThreshold(
+            img_array, 255,
+            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY,
+            blockSize=block_size,  # Taille du bloc pour le calcul du seuil
+            C=c_value              # Constante soustraite de la moyenne
+        )
+        
+        # 7. Nettoyage morphologique pour éliminer le bruit
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
+        cleaned = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel)
+        cleaned = cv2.morphologyEx(cleaned, cv2.MORPH_OPEN, kernel)
+        
+        # 8. Correction de l'inclinaison (optionnel)
+        if apply_deskew:
+            cleaned = self._deskew_image(cleaned)
+        
+        return Image.fromarray(cleaned)
+    
+    @property
+    def available_languages(self) -> List[str]:
+        """Get list of available Tesseract languages."""
+        if self._available_languages is None:
+            self._available_languages = self._get_available_languages()
+        return self._available_languages
+    
+    def _load_image(self, image_input: Union[str, Path, Image.Image, np.ndarray]) -> Image.Image:
+        """
+        Load and convert various image input types to PIL Image.
+        
+        Args:
+            image_input: Image file path, PIL Image, or numpy array
+            
+        Returns:
+            PIL Image object
+            
+        Raises:
+            ValueError: If image input type is not supported
+        """
+        if isinstance(image_input, Image.Image):
+            return image_input
+        elif isinstance(image_input, (str, Path)):
+            image_path = str(image_input)
+            if image_path in self._image_cache:
+                return self._image_cache[image_path].copy()
+            image = Image.open(image_path)
+            self._image_cache[image_path] = image.copy()
+            return image
+        elif isinstance(image_input, np.ndarray):
+            return Image.fromarray(image_input)
+        else:
+            raise ValueError(f"Unsupported image input type: {type(image_input)}")
+    
+    def preprocess_image(self, 
+                        image_input: Union[str, Path, Image.Image, np.ndarray],
+                        enhancement_level: EnhancementLevel = EnhancementLevel.MEDIUM,
+                        min_size: int = 300) -> Image.Image:
+        """
+        Apply intelligent preprocessing to optimize image for OCR.
+        
+        This method applies various image enhancement techniques including
+        resizing, contrast enhancement, sharpening, and noise reduction.
+        
+        Args:
+            image_input: Input image in various formats
+            enhancement_level: Level of preprocessing enhancement
+            min_size: Minimum dimension for image resizing
+            
+        Returns:
+            Preprocessed PIL Image optimized for OCR
+        """
+        image = self._load_image(image_input)
+        original_size = image.size
+        
+        # Convert to grayscale for better OCR performance
+        if image.mode != 'L':
+            image = image.convert('L')
+        
+        # Resize if too small (OCR works better on larger images)
         if min(image.size) < min_size:
             ratio = min_size / min(image.size)
             new_size = (int(image.size[0] * ratio), int(image.size[1] * ratio))
             image = image.resize(new_size, Image.Resampling.LANCZOS)
-            print(f"🔍 Image redimensionnée : {new_size}")
+            logger.debug(f"Image resized from {original_size} to {new_size}")
         
-        # Améliorations selon le niveau
-        if enhancement_level in ['medium', 'strong']:
-            # Améliorer le contraste
+        # Apply enhancements based on level
+        if enhancement_level in [EnhancementLevel.MEDIUM, EnhancementLevel.STRONG]:
+            # Contrast enhancement
+            contrast_factor = 1.5 if enhancement_level == EnhancementLevel.MEDIUM else 2.0
             enhancer = ImageEnhance.Contrast(image)
-            image = enhancer.enhance(1.5 if enhancement_level == 'medium' else 2.0)
+            image = enhancer.enhance(contrast_factor)
             
-            # Améliorer la netteté
+            # Sharpness enhancement
+            sharpness_factor = 1.2 if enhancement_level == EnhancementLevel.MEDIUM else 1.5
             enhancer = ImageEnhance.Sharpness(image)
-            image = enhancer.enhance(1.2 if enhancement_level == 'medium' else 1.5)
+            image = enhancer.enhance(sharpness_factor)
         
-        if enhancement_level == 'strong':
-            # Réduction du bruit avec filtre médian
+        if enhancement_level == EnhancementLevel.STRONG:
+            # Noise reduction with median filter
             image = image.filter(ImageFilter.MedianFilter(size=3))
             
-            # Seuillage adaptatif pour améliorer le contraste
+            # Adaptive thresholding for better contrast
             img_array = np.array(image)
             img_array = cv2.adaptiveThreshold(
                 img_array, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
                 cv2.THRESH_BINARY, 11, 2
             )
             image = Image.fromarray(img_array)
+
+        if enhancement_level == EnhancementLevel.CUSTOM:
+            # Utiliser le preprocessing optimisé
+            return self.preprocess_image_custom(image_input, min_size)
         
         return image
     
-    def extract_text_simple(self, image, lang='eng', config=None):
+    def extract_text(self, 
+                    image_input: Union[str, Path, Image.Image, np.ndarray],
+                    languages: Union[str, List[str]] = 'eng',
+                    psm_mode: PSMMode = PSMMode.SINGLE_BLOCK,
+                    enhancement_level: EnhancementLevel = EnhancementLevel.MEDIUM,
+                    custom_config: Optional[str] = None) -> str:
         """
-        Extraction simple de texte
+        Extract text from image using Tesseract OCR.
         
         Args:
-            image: Image ou chemin vers fichier
-            lang: Code langue ('eng', 'fra', 'eng+fra', etc.)
-            config: Configuration Tesseract personnalisée
-        
-        Returns:
-            str: Texte extrait
-        """
-        if config is None:
-            config = '--oem 3 --psm 6'  # OCR Engine Mode 3, Page Segmentation Mode 6
-        
-        # Préprocessing
-        processed_image = self.preprocess_image(image)
-        
-        # Extraction avec gestion d'erreur
-        try:
-            start_time = time.time()
-            text = pytesseract.image_to_string(
-                processed_image, 
-                lang=lang, 
-                config=config
-            )
-            end_time = time.time()
+            image_input: Input image in various formats
+            languages: Language code(s) for OCR ('eng', 'fra', or ['eng', 'fra'])
+            psm_mode: Page segmentation mode
+            enhancement_level: Image preprocessing level
+            custom_config: Custom Tesseract configuration string
             
-            print(f"⏱️  Temps de traitement : {end_time - start_time:.2f}s")
+        Returns:
+            Extracted text as string
+        """
+        processed_image = self.preprocess_image(image_input, enhancement_level)
+        
+        # Handle language specification
+        if isinstance(languages, list):
+            lang_string = '+'.join(languages)
+        else:
+            lang_string = languages
+        
+        # Build configuration string
+        if custom_config:
+            config = custom_config
+        else:
+            config = f'--oem 3 --psm {psm_mode.value}'
+        
+        try:
+            start_time = time.perf_counter()
+            text = pytesseract.image_to_string(processed_image, lang=lang_string, config=config)
+            processing_time = time.perf_counter() - start_time
+            
+            logger.debug(f"Text extraction completed in {processing_time:.3f}s")
             return text.strip()
             
         except Exception as e:
-            print(f"❌ Erreur lors de l'extraction : {e}")
+            logger.error(f"Text extraction failed: {e}")
             return ""
     
-    def extract_text_with_boxes(self, image, lang='eng', confidence_threshold=30):
+    def extract_text_with_boxes(self, 
+                               image_input: Union[str, Path, Image.Image, np.ndarray],
+                               languages: Union[str, List[str]] = 'eng',
+                               confidence_threshold: float = 30.0,
+                               enhancement_level: EnhancementLevel = EnhancementLevel.MEDIUM) -> List[OCRResult]:
         """
-        Extraction avec coordonnées des boîtes de texte
+        Extract text with bounding box coordinates and confidence scores.
         
         Args:
-            image: Image ou chemin vers fichier
-            lang: Code langue
-            confidence_threshold: Seuil de confiance minimum (0-100)
-        
+            image_input: Input image in various formats
+            languages: Language code(s) for OCR
+            confidence_threshold: Minimum confidence score (0-100)
+            enhancement_level: Image preprocessing level
+            
         Returns:
-            list: Liste des détections avec texte, coordonnées et confiance
+            List of OCRResult objects containing text, coordinates, and confidence
         """
-        processed_image = self.preprocess_image(image)
+        processed_image = self.preprocess_image(image_input, enhancement_level)
+        
+        # Handle language specification
+        if isinstance(languages, list):
+            lang_string = '+'.join(languages)
+        else:
+            lang_string = languages
         
         try:
-            # Obtenir les données détaillées
             data = pytesseract.image_to_data(
                 processed_image,
-                lang=lang,
+                lang=lang_string,
                 config='--oem 3 --psm 6',
                 output_type=pytesseract.Output.DICT
             )
             
             results = []
             for i in range(len(data['text'])):
-                confidence = int(data['conf'][i])
+                confidence = float(data['conf'][i])
                 text = data['text'][i].strip()
                 
-                # Filtrer par confiance et texte non vide
+                # Filter by confidence and non-empty text
                 if confidence >= confidence_threshold and text:
-                    result = {
-                        'text': text,
-                        'confidence': confidence,
-                        'x': data['left'][i],
-                        'y': data['top'][i],
-                        'width': data['width'][i],
-                        'height': data['height'][i],
-                        'level': data['level'][i]  # Niveau hiérarchique (mot, ligne, paragraphe)
-                    }
+                    result = OCRResult(
+                        text=text,
+                        confidence=confidence,
+                        x=int(data['left'][i]),
+                        y=int(data['top'][i]),
+                        width=int(data['width'][i]),
+                        height=int(data['height'][i]),
+                        level=int(data['level'][i])
+                    )
                     results.append(result)
             
-            print(f"📊 {len(results)} éléments détectés avec confiance >= {confidence_threshold}%")
+            logger.info(f"Detected {len(results)} elements with confidence >= {confidence_threshold}%")
             return results
             
         except Exception as e:
-            print(f"❌ Erreur lors de l'extraction avec boîtes : {e}")
+            logger.error(f"Box extraction failed: {e}")
             return []
     
-    def draw_results(self, image_path, results, output_path="output_tesseract.png", 
-                    show_confidence=True, min_confidence=50):
+    def draw_detection_boxes(self, 
+                           image_path: Union[str, Path],
+                           results: List[OCRResult],
+                           output_path: Union[str, Path] = "ocr_results.png",
+                           show_confidence: bool = True,
+                           min_confidence: float = 50.0,
+                           box_colors: Optional[Dict[str, Tuple[int, int, int]]] = None) -> bool:
         """
-        Dessiner les résultats OCR sur l'image
+        Draw OCR detection results on image with colored bounding boxes.
         
         Args:
-            image_path: Chemin vers l'image originale
-            results: Résultats de extract_text_with_boxes()
-            output_path: Chemin de sauvegarde
-            show_confidence: Afficher le pourcentage de confiance
-            min_confidence: Confiance minimale pour l'affichage
-        """
-        # Charger l'image originale
-        image = cv2.imread(str(image_path))
-        if image is None:
-            print(f"❌ Impossible de charger l'image : {image_path}")
-            return
-        
-        # Compteurs
-        total_boxes = len(results)
-        drawn_boxes = 0
-        
-        # Dessiner chaque détection
-        for result in results:
-            if result['confidence'] < min_confidence:
-                continue
-                
-            x, y, w, h = result['x'], result['y'], result['width'], result['height']
-            text = result['text']
-            confidence = result['confidence']
+            image_path: Path to original image
+            results: List of OCRResult objects
+            output_path: Output image path
+            show_confidence: Include confidence scores in labels
+            min_confidence: Minimum confidence for display
+            box_colors: Custom colors for different confidence levels
             
-            # Couleur selon la confiance
-            if confidence >= 80:
-                color = (0, 255, 0)  # Vert
-            elif confidence >= 60:
-                color = (0, 255, 255)  # Jaune
-            else:
-                color = (0, 165, 255)  # Orange
-            
-            # Dessiner le rectangle
-            cv2.rectangle(image, (x, y), (x + w, y + h), color, 2)
-            
-            # Préparer le label
-            if show_confidence:
-                label = f"{text} ({confidence}%)"
-            else:
-                label = text
-            
-            # Limiter la longueur du label
-            if len(label) > 30:
-                label = label[:27] + "..."
-            
-            # Dessiner le texte de fond
-            label_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)[0]
-            cv2.rectangle(image, (x, y - 25), (x + label_size[0], y), color, -1)
-            
-            # Dessiner le texte
-            cv2.putText(image, label, (x, y - 8),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
-            
-            drawn_boxes += 1
-        
-        # Sauvegarder
-        cv2.imwrite(output_path, image)
-        print(f"💾 Résultat sauvegardé : {output_path}")
-        print(f"📊 {drawn_boxes}/{total_boxes} boîtes affichées (confiance >= {min_confidence}%)")
-    
-    def analyze_image(self, image_path, languages=['eng'], save_results=True):
-        """
-        Analyse complète d'une image avec rapport détaillé
-        
-        Args:
-            image_path: Chemin vers l'image
-            languages: Liste des langues à tester
-            save_results: Sauvegarder les images de résultats
-        
         Returns:
-            dict: Rapport complet d'analyse
+            True if successful, False otherwise
         """
-        print(f"\n🔍 ANALYSE COMPLÈTE DE : {image_path}")
-        print("=" * 60)
+        try:
+            image = cv2.imread(str(image_path))
+            if image is None:
+                logger.error(f"Failed to load image: {image_path}")
+                return False
+            
+            # Default color scheme based on confidence
+            if box_colors is None:
+                box_colors = {
+                    'high': (0, 255, 0),    # Green for >80%
+                    'medium': (0, 255, 255), # Yellow for 60-80%
+                    'low': (0, 165, 255)     # Orange for <60%
+                }
+            
+            drawn_count = 0
+            for result in results:
+                if result.confidence < min_confidence:
+                    continue
+                
+                # Determine color based on confidence
+                if result.confidence >= 80:
+                    color = box_colors['high']
+                elif result.confidence >= 60:
+                    color = box_colors['medium']
+                else:
+                    color = box_colors['low']
+                
+                # Draw bounding box
+                cv2.rectangle(image, 
+                            (result.x, result.y), 
+                            (result.x + result.width, result.y + result.height), 
+                            color, 2)
+                
+                # Prepare label
+                if show_confidence:
+                    label = f"{result.text} ({result.confidence:.1f}%)"
+                else:
+                    label = result.text
+                
+                # Truncate long labels
+                if len(label) > 30:
+                    label = label[:27] + "..."
+                
+                # Draw label background and text
+                label_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)[0]
+                cv2.rectangle(image, 
+                            (result.x, result.y - 25), 
+                            (result.x + label_size[0], result.y), 
+                            color, -1)
+                cv2.putText(image, label, (result.x, result.y - 8),
+                          cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
+                
+                drawn_count += 1
+            
+            cv2.imwrite(str(output_path), image)
+            logger.info(f"Results saved to: {output_path}")
+            logger.info(f"Displayed {drawn_count}/{len(results)} boxes (confidence >= {min_confidence}%)")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to draw detection boxes: {e}")
+            return False
+    
+    def analyze_image(self, 
+                     image_path: Union[str, Path],
+                     languages: List[str] = None,
+                     save_visualizations: bool = True) -> Dict[str, Any]:
+        """
+        Perform comprehensive OCR analysis on an image.
         
-        if not os.path.exists(image_path):
-            print(f"❌ Fichier non trouvé : {image_path}")
+        Args:
+            image_path: Path to image file
+            languages: List of languages to test (defaults to available languages)
+            save_visualizations: Save result visualizations
+            
+        Returns:
+            Comprehensive analysis report dictionary
+        """
+        image_path = Path(image_path)
+        
+        if not image_path.exists():
+            logger.error(f"Image file not found: {image_path}")
             return {}
         
-        # Informations sur l'image
-        image = Image.open(image_path)
-        file_size = os.path.getsize(image_path) / 1024  # KB
+        logger.info(f"Starting comprehensive analysis: {image_path.name}")
         
-        print(f"📁 Taille fichier : {file_size:.1f} KB")
-        print(f"📐 Dimensions : {image.size[0]} x {image.size[1]} pixels")
-        print(f"🎨 Mode couleur : {image.mode}")
+        # Get image information
+        try:
+            image = Image.open(image_path)
+            file_size_kb = image_path.stat().st_size / 1024
+            
+            image_info = ImageInfo(
+                path=str(image_path),
+                size=image.size,
+                mode=image.mode,
+                file_size_kb=file_size_kb
+            )
+            
+            logger.info(f"Image: {image_info.size[0]}x{image_info.size[1]}px, "
+                       f"{image_info.mode}, {file_size_kb:.1f}KB")
+            
+        except Exception as e:
+            logger.error(f"Failed to read image info: {e}")
+            return {}
         
-        # Résultats pour chaque langue
-        report = {
-            'image_info': {
-                'path': image_path,
-                'size': image.size,
-                'mode': image.mode,
-                'file_size_kb': file_size
-            },
-            'results': {}
+        # Use provided languages or available ones
+        if languages is None:
+            languages = [lang for lang in self.available_languages if lang in ['eng', 'fra', 'deu', 'spa']]
+        
+        # Filter unavailable languages
+        valid_languages = [lang for lang in languages if lang in self.available_languages]
+        if not valid_languages:
+            logger.warning("No valid languages found, using English")
+            valid_languages = ['eng']
+        
+        # Analysis results
+        analysis_report = {
+            'image_info': image_info,
+            'results': {},
+            'timestamp': time.time()
         }
         
-        for lang in languages:
-            if lang not in self.available_languages:
-                print(f"⚠️  Langue '{lang}' non disponible, ignorée")
-                continue
+        for lang in valid_languages:
+            logger.info(f"Processing language: {lang}")
+            
+            try:
+                # Extract text and boxes
+                text = self.extract_text(image_path, languages=lang)
+                boxes = self.extract_text_with_boxes(image_path, languages=lang)
                 
-            print(f"\n📝 Test avec langue : {lang}")
-            print("-" * 30)
-            
-            # Extraction simple
-            text = self.extract_text_simple(image_path, lang=lang)
-            
-            # Extraction avec boîtes
-            boxes = self.extract_text_with_boxes(image_path, lang=lang)
-            
-            # Statistiques
-            total_chars = len(text)
-            total_words = len(text.split()) if text else 0
-            avg_confidence = np.mean([b['confidence'] for b in boxes]) if boxes else 0
-            
-            # Stocker les résultats
-            report['results'][lang] = {
-                'text': text,
-                'boxes': boxes,
-                'stats': {
-                    'total_characters': total_chars,
-                    'total_words': total_words,
-                    'detected_elements': len(boxes),
-                    'average_confidence': avg_confidence
+                # Calculate statistics
+                stats = AnalysisStats(
+                    total_characters=len(text),
+                    total_words=len(text.split()) if text else 0,
+                    detected_elements=len(boxes),
+                    average_confidence=np.mean([box.confidence for box in boxes]) if boxes else 0.0
+                )
+                
+                analysis_report['results'][lang] = {
+                    'text': text,
+                    'boxes': [box.__dict__ for box in boxes],  # Convert to dict for serialization
+                    'stats': stats.__dict__
                 }
-            }
-            
-            # Affichage
-            print(f"📝 Texte extrait ({total_chars} caractères, {total_words} mots) :")
-            if text:
-                preview = text[:200] + ("..." if len(text) > 200 else "")
-                print(f"   '{preview}'")
-            else:
-                print("   (Aucun texte détecté)")
-            
-            print(f"📊 {len(boxes)} éléments détectés, confiance moyenne : {avg_confidence:.1f}%")
-            
-            # Sauvegarder les résultats visuels
-            if save_results and boxes:
-                output_path = f"output_{lang}_{Path(image_path).stem}.png"
-                self.draw_results(image_path, boxes, output_path)
+                
+                logger.info(f"Language {lang}: {stats.total_words} words, "
+                           f"{stats.detected_elements} elements, "
+                           f"avg confidence: {stats.average_confidence:.1f}%")
+                
+                # Save visualization if requested
+                if save_visualizations and boxes:
+                    output_path = f"analysis_{lang}_{image_path.stem}.png"
+                    self.draw_detection_boxes(image_path, boxes, output_path)
+                
+            except Exception as e:
+                logger.error(f"Analysis failed for language {lang}: {e}")
+                analysis_report['results'][lang] = {'error': str(e)}
         
-        return report
+        logger.info("Analysis completed successfully")
+        return analysis_report
     
-    def test_configurations(self, image_path):
+    def benchmark_psm_modes(self, image_path: Union[str, Path]) -> Dict[int, Dict[str, Any]]:
         """
-        Tester différentes configurations PSM pour trouver la meilleure
+        Benchmark different Page Segmentation Modes to find optimal settings.
         
         Args:
-            image_path: Chemin vers l'image à tester
+            image_path: Path to test image
+            
+        Returns:
+            Dictionary with PSM mode results and performance metrics
         """
-        print(f"\n🧪 TEST DE CONFIGURATIONS POUR : {image_path}")
-        print("=" * 60)
+        logger.info(f"Benchmarking PSM modes for: {Path(image_path).name}")
         
-        # Différents modes PSM (Page Segmentation Mode)
-        psm_modes = {
-            6: "Bloc de texte uniforme (défaut)",
-            7: "Ligne de texte unique",
-            8: "Mot unique",
-            11: "Caractère unique sparse",
-            12: "Texte sparse avec OSD",
-            13: "Ligne brute - pas de hack"
-        }
+        # Test modes suitable for different text layouts
+        test_modes = [
+            PSMMode.SINGLE_BLOCK,
+            PSMMode.SINGLE_TEXT_LINE,
+            PSMMode.SINGLE_WORD,
+            PSMMode.SPARSE_TEXT,
+            PSMMode.SPARSE_TEXT_OSD,
+            PSMMode.RAW_LINE
+        ]
         
         results = {}
         
-        for psm, description in psm_modes.items():
-            print(f"\n🔧 PSM {psm}: {description}")
-            
-            config = f'--oem 3 --psm {psm}'
+        for psm_mode in test_modes:
+            logger.info(f"Testing PSM {psm_mode.value}: {psm_mode.name}")
             
             try:
-                start_time = time.time()
-                text = self.extract_text_simple(image_path, config=config)
-                end_time = time.time()
+                start_time = time.perf_counter()
+                text = self.extract_text(image_path, psm_mode=psm_mode)
+                processing_time = time.perf_counter() - start_time
                 
                 word_count = len(text.split()) if text else 0
                 char_count = len(text) if text else 0
-                processing_time = end_time - start_time
+                success = bool(text.strip())
                 
-                results[psm] = {
+                results[psm_mode.value] = {
+                    'mode_name': psm_mode.name,
                     'text': text,
                     'word_count': word_count,
                     'char_count': char_count,
                     'processing_time': processing_time,
-                    'success': bool(text.strip())
+                    'success': success
                 }
                 
-                status = "✅" if text.strip() else "❌"
-                print(f"   {status} {word_count} mots, {char_count} chars, {processing_time:.2f}s")
-                
-                if text.strip():
-                    preview = text.strip()[:100] + ("..." if len(text.strip()) > 100 else "")
-                    print(f"   Preview: '{preview}'")
+                status = "SUCCESS" if success else "FAILED"
+                logger.info(f"PSM {psm_mode.value}: {status} - {word_count} words, "
+                           f"{char_count} chars, {processing_time:.3f}s")
                 
             except Exception as e:
-                print(f"   ❌ Erreur: {e}")
-                results[psm] = {'error': str(e), 'success': False}
+                logger.error(f"PSM {psm_mode.value} failed: {e}")
+                results[psm_mode.value] = {
+                    'mode_name': psm_mode.name,
+                    'error': str(e),
+                    'success': False
+                }
         
-        # Recommandation
+        # Find best performing mode
         successful_results = {k: v for k, v in results.items() if v.get('success', False)}
         
         if successful_results:
-            # Choisir le mode avec le plus de mots détectés
-            best_psm = max(successful_results.keys(), 
+            best_mode = max(successful_results.keys(), 
                           key=lambda x: successful_results[x]['word_count'])
-            
-            print(f"\n🏆 RECOMMANDATION: PSM {best_psm} - {psm_modes[best_psm]}")
-            print(f"   Meilleur résultat: {successful_results[best_psm]['word_count']} mots")
+            logger.info(f"Recommended PSM mode: {best_mode} ({PSMMode(best_mode).name}) - "
+                       f"{successful_results[best_mode]['word_count']} words detected")
         else:
-            print(f"\n❌ Aucune configuration n'a donné de résultats satisfaisants")
+            logger.warning("No PSM mode produced satisfactory results")
         
         return results
-
-
-def main():
-    """Fonction principale avec exemples d'utilisation"""
-    print("🚀 TESSERACT OCR - SCRIPT DE DÉMONSTRATION")
-    print("=" * 50)
     
-    try:
-        # Initialiser Tesseract OCR
-        ocr = TesseractOCR()
-        
-        # Vérifier qu'une image de test existe
-        test_images = ["test_image.png", "test_image.jpg", "sample.png", "sample.jpg"]
-        image_path = None
-        
-        for img in test_images:
-            if os.path.exists(img):
-                image_path = img
-                break
-        
+    def clear_cache(self) -> None:
+        """Clear internal image cache to free memory."""
+        self._image_cache.clear()
+        logger.debug("Image cache cleared")
+
+    def capture_image_from_webcam(self,
+                               output_path: str = "image/captured_ocr.jpg",
+                               warmup_frames: int = 5,
+                               stabilization_time: float = 0.1) -> Optional[str]:
+        """
+        Capture an image from the webcam for OCR processing.
+
+        Args:
+            output_path: File path to save the captured image.
+            warmup_frames: Number of initial frames to discard.
+            stabilization_time: Delay after warmup for better image.
+
+        Returns:
+            Path to the saved image or None if failed.
+        """
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        camera_id = self.camera_id  
+        cap = cv2.VideoCapture(camera_id)
+        if not cap.isOpened():
+            logger.error(f"Cannot open camera {camera_id}")
+            return None
+
+        try:
+            for _ in range(warmup_frames):
+                cap.read()
+                time.sleep(stabilization_time)
+
+            ret, frame = cap.read()
+            if not ret:
+                logger.error("Failed to capture frame")
+                return None
+
+            cv2.imwrite(output_path, frame)
+            logger.info(f"📸 Image captured to: {output_path}")
+            return output_path
+
+        finally:
+            cap.release()
+            cv2.destroyAllWindows()
+
+    def capture_and_extract_text(self,
+                                camera_id: int = 0,
+                                output_path: str = "image/captured_ocr.jpg",
+                                languages: Union[str, List[str]] = 'eng',
+                                psm_mode: PSMMode = PSMMode.SINGLE_BLOCK,
+                                enhancement_level: EnhancementLevel = EnhancementLevel.MEDIUM) -> Optional[str]:
+        """
+        Capture image from webcam and extract OCR text.
+        Automatically deletes the captured image after OCR.
+
+        Args:
+            camera_id: Webcam device ID.
+            output_path: Path to temporarily save captured image.
+            languages: OCR language(s).
+            psm_mode: Page segmentation mode.
+            enhancement_level: Image enhancement level before OCR.
+
+        Returns:
+            Extracted text or None if failed.
+        """
+        # Warm up camera and capture
+        image_path = self.capture_image_from_webcam(
+            output_path=output_path,
+            warmup_frames=1,                # ⬅️ Increased warmup frames
+            stabilization_time=0.1         # ⬅️ Slightly longer delay
+        )
+
         if not image_path:
-            print("❌ Aucune image de test trouvée.")
-            print("   Placez une image nommée 'test_image.png' dans le répertoire courant.")
-            
-            # Créer une image de test simple
-            print("📝 Création d'une image de test...")
-            create_test_image()
-            image_path = "test_image_generated.png"
-        
-        print(f"📸 Image de test : {image_path}")
-        
-        # === DÉMONSTRATION 1: Extraction simple ===
-        print(f"\n1️⃣  EXTRACTION SIMPLE")
-        print("-" * 30)
-        
-        text = ocr.extract_text_simple(image_path, lang='eng')
-        print(f"Texte extrait : '{text}'")
-        
-        # === DÉMONSTRATION 2: Extraction avec boîtes ===
-        print(f"\n2️⃣  EXTRACTION AVEC COORDONNÉES")
-        print("-" * 30)
-        
-        boxes = ocr.extract_text_with_boxes(image_path, lang='eng')
-        
-        for i, box in enumerate(boxes[:5]):  # Afficher les 5 premiers
-            print(f"  {i+1}. '{box['text']}' - {box['confidence']}% - "
-                  f"({box['x']},{box['y']}) {box['width']}x{box['height']}")
-        
-        if len(boxes) > 5:
-            print(f"  ... et {len(boxes) - 5} autres éléments")
-        
-        # === DÉMONSTRATION 3: Analyse complète ===
-        print(f"\n3️⃣  ANALYSE COMPLÈTE")
-        
-        # Tester avec anglais et français si disponible
-        languages = ['eng']
-        if 'fra' in ocr.available_languages:
-            languages.append('fra')
-        
-        report = ocr.analyze_image(image_path, languages=languages)
-        
-        # === DÉMONSTRATION 4: Test de configurations ===
-        print(f"\n4️⃣  TEST DE CONFIGURATIONS")
-        
-        ocr.test_configurations(image_path)
-        
-        print(f"\n✅ DÉMONSTRATION TERMINÉE")
-        print(f"📁 Vérifiez les fichiers de sortie générés dans le répertoire courant")
-        
-    except Exception as e:
-        print(f"❌ Erreur dans la démonstration : {e}")
-        import traceback
-        traceback.print_exc()
+            return None
+
+        # Run OCR
+        text = self.extract_text(
+            image_path,
+            languages=languages,
+            psm_mode=psm_mode,
+            enhancement_level=enhancement_level
+        )
+
+        # Auto-delete the temporary image
+        try:
+            os.remove(image_path)
+            logger.info(f"🗑️ Deleted temporary image: {image_path}")
+        except Exception as e:
+            logger.warning(f"Failed to delete temp image: {e}")
+
+        return text
 
 
-def create_test_image():
-    """Créer une image de test simple si aucune n'est disponible"""
-    from PIL import ImageDraw, ImageFont
+
+
+
+# Utility functions for module usage
+def create_test_image(output_path: str = "test_image.png", 
+                     size: Tuple[int, int] = (800, 400)) -> str:
+    """
+    Create a test image with various text elements for OCR testing.
     
-    # Créer une image blanche
-    img = Image.new('RGB', (800, 400), color='white')
+    Args:
+        output_path: Path for generated test image
+        size: Image dimensions (width, height)
+        
+    Returns:
+        Path to created test image
+    """
+    img = Image.new('RGB', size, color='white')
     draw = ImageDraw.Draw(img)
     
-    # Essayer d'utiliser une police par défaut
+    # Try to use a standard font
     try:
         font = ImageFont.truetype("arial.ttf", 36)
-    except:
+        small_font = ImageFont.truetype("arial.ttf", 24)
+    except OSError:
         font = ImageFont.load_default()
+        small_font = font
     
-    # Ajouter du texte
-    texts = [
-        "Tesseract OCR Test",
-        "Ceci est un test d'OCR",
-        "Numéros: 123456789",
-        "Email: test@example.com"
+    # Add various text elements
+    test_texts = [
+        ("Tesseract OCR Test", 50, 50, font),
+        ("Multi-language support", 50, 120, font),
+        ("Numbers: 123456789", 50, 190, font),
+        ("Email: test@example.com", 50, 260, small_font),
+        ("Special chars: @#$%&*", 50, 320, small_font)
     ]
     
-    y_position = 50
-    for text in texts:
-        draw.text((50, y_position), text, fill='black', font=font)
-        y_position += 60
+    for text, x, y, text_font in test_texts:
+        draw.text((x, y), text, fill='black', font=text_font)
     
-    # Sauvegarder
-    img.save("test_image_generated.png")
-    print("✅ Image de test créée : test_image_generated.png")
+    img.save(output_path)
+    logger.info(f"Test image created: {output_path}")
+    return output_path
 
 
-def check_installation():
-    """Vérifier l'installation de Tesseract"""
-    print("🔍 VÉRIFICATION DE L'INSTALLATION")
-    print("=" * 40)
+def verify_installation() -> bool:
+    """
+    Verify Tesseract OCR installation and required dependencies.
+    
+    Returns:
+        True if installation is complete and functional
+    """
+    logger.info("Verifying Tesseract OCR installation")
     
     try:
-        # Test Tesseract
-        possible_paths = [
-            r'C:\Program Files\Tesseract-OCR\tesseract.exe',
-            r'C:\Program Files (x86)\Tesseract-OCR\tesseract.exe',
-            'tesseract'
-        ]
-        tesseract_found = False
-        for path in possible_paths:
-            try:
-                pytesseract.pytesseract.tesseract_cmd = path
-                version = pytesseract.get_tesseract_version()
-                print(f"   ✅ Tesseract trouvé: {path}")
-                print(f"   📝 Version: {version}")
-                tesseract_found = True
-                break
-            except:
-                continue
-        if not tesseract_found:
-            raise Exception("Tesseract non trouvé. Vérifiez l'installation.")
-        
+        # Test Tesseract availability
+        ocr = TesseractOCR()
         version = pytesseract.get_tesseract_version()
-        print(f"✅ Tesseract version : {version}")
+        logger.info(f"Tesseract version: {version}")
         
-        # Test langues
-        languages = pytesseract.get_languages()
-        print(f"✅ Langues disponibles : {', '.join(languages)}")
+        # Test language availability
+        languages = ocr.available_languages
+        logger.info(f"Available languages: {', '.join(languages)}")
         
-        # Test des bibliothèques
+        # Test dependencies
         import cv2
-        print(f"✅ OpenCV version : {cv2.__version__}")
-        
-        from PIL import Image
-        print(f"✅ Pillow installé")
+        logger.info(f"OpenCV version: {cv2.__version__}")
         
         import numpy
-        print(f"✅ NumPy version : {numpy.__version__}")
+        logger.info(f"NumPy version: {numpy.__version__}")
         
-        print(f"\n🎉 Installation complète et fonctionnelle !")
+        logger.info("Installation verification successful")
         return True
         
     except Exception as e:
-        print(f"❌ Problème détecté : {e}")
-        print(f"\n🔧 Solutions possibles :")
-        print(f"   1. Vérifiez que Tesseract est installé")
-        print(f"   2. Ajoutez Tesseract au PATH")
-        print(f"   3. Installez les packages Python manquants")
+        logger.error(f"Installation verification failed: {e}")
+        logger.info("Please ensure Tesseract OCR and required Python packages are installed")
         return False
 
 
+# Example usage for testing
 if __name__ == "__main__":
-    # Vérifier d'abord l'installation
-    if check_installation():
-        print("\n" + "="*60)
-        main()
-    else:
-        print(f"\n❌ Corrigez les problèmes d'installation avant de continuer.")
-        sys.exit(1)
+    ocr = TesseractOCR(camera_id=1)
+    ocr_text = ocr.capture_and_extract_text()
+    print("OCR Text:", ocr_text)

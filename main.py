@@ -6,6 +6,8 @@ from stt import SpeechToTextApplication
 from recorder import AudioRecorder
 from classify import IntentClassifier
 from tts import talk_stream
+from blip import BlipModel
+from ocr import TesseractOCR
 
 class VoiceAssistant:
     def __init__(self):
@@ -24,13 +26,16 @@ class VoiceAssistant:
             system_prompt="Respond with 1 sentence only."
         )
         self.stt_app = SpeechToTextApplication("audio")
-        self.classifier = IntentClassifier()
-
+        self.classifier = IntentClassifier(model_name="all-distilroberta-v1") 
+        self.blip = BlipModel(camera_id=1)
+        self.blip.load()
+        self.ocr = TesseractOCR(camera_id=1)
         WakeWordDetector.download_models() # Download default models if not present
         self.detector = WakeWordDetector(
             wakeword_models=["models\hey_lucy.onnx"]
         )
         self.detector.register_callback("hey_lucy", self.on_wake_word_detected)
+
         # Auto-select default microphone
         default_mic = self.recorder.mic_selector.get_default_microphone()
         if default_mic:
@@ -89,14 +94,14 @@ class VoiceAssistant:
 
             match intent:
                 case "read_text":
-                    talk_stream("Classifying intent as 'read text'.")
-                    # Add reading text functionality here
+                    text = self.ocr.capture_and_extract_text()
+                    talk_stream(text or "No text detected.")
                 case "locate_object":
                     talk_stream("Classifying intent as 'locate object'.")  
                     # Add object locating functionality here
                 case "describe_scene":
-                    talk_stream("Classifying intent as 'describe scene'.")
-                    # Add scene description functionality here
+                    image_path, caption = self.blip.capture_and_describe(auto_capture=True)
+                    talk_stream(caption)
                 case "activate_detection_collision":
                     talk_stream("Classifying intent as 'activate detection collision'.")
                     # Add collision detection functionality here
