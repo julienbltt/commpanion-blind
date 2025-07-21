@@ -12,7 +12,7 @@ OCR_OUTPUT_DIR = "output"
 
 # Initialize PaddleOCR globally, so it's loaded only once
 print("⏳ Initializing DocTR model... This might take a moment (first run only).")
-model = ocr_predictor(pretrained=True)
+doctrmodel = ocr_predictor(pretrained=True)
 print("✅ DocTR model initialized.")
 
 
@@ -45,7 +45,7 @@ def DocTRRead(frame):
     try:
         # Using ocr.ocr directly
         doc = DocumentFile.from_images(CAPTURED_IMAGE_PATH)
-        result = model(doc)
+        result = doctrmodel(doc)
         output = result.export()
     except Exception as e:
         print(f"Error during OCR processing: {e}")
