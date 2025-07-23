@@ -8,6 +8,7 @@ from classify import IntentClassifier
 from tts import talk_stream
 from blip import BlipModel
 from ocr import TesseractOCR
+from DocTRText import capture_image DocTRRead
 
 class VoiceAssistant:
     def __init__(self):
@@ -94,7 +95,9 @@ class VoiceAssistant:
 
             match intent:
                 case "read_text":
-                    text = self.ocr.capture_and_extract_text()
+                    # text = self.ocr.capture_and_extract_text()
+                    img = capture_image()
+                    text = DocTRRead(img)
                     talk_stream(text or "No text detected.")
                 case "locate_object":
                     talk_stream("Classifying intent as 'locate object'.")  
