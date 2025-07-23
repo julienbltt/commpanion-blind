@@ -105,6 +105,3 @@ def DocTRRead(frame):
     result = " ".join(words)
     print(result)
     return result
-
-frame = capture_image()
-print(DocTRRead(frame))
