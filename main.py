@@ -8,7 +8,7 @@ from classify import IntentClassifier
 from tts import talk_stream
 from blip import BlipModel
 from ocr import TesseractOCR
-from DocTRText import capture_image DocTRRead
+from DocTRText import capture_image, DocTRRead
 
 class VoiceAssistant:
     def __init__(self):
