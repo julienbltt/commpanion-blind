@@ -3,7 +3,7 @@ from doctr.io import DocumentFile
 from doctr.models import ocr_predictor
 import json
 import os
-
+import logging
 
 # === Configuration ===
 # These paths are still used for saving the temporary image and OCR output files
@@ -12,9 +12,36 @@ OCR_OUTPUT_DIR = "output"
 
 # Initialize PaddleOCR globally, so it's loaded only once
 print("⏳ Initializing DocTR model... This might take a moment (first run only).")
-doctrmodel = ocr_predictor(pretrained=True)
+model = ocr_predictor(pretrained=True)
 print("✅ DocTR model initialized.")
+def setup_logging():
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+    return logging.getLogger(__name__)
 
+logger = setup_logging()
+
+def capture_image():
+    cap = cv2.VideoCapture(0)
+    if not cap.isOpened():
+        logger.error("Camera not accessible.")
+        return None
+    
+    
+    #print("Press SPACE to capture the image, or ESC to cancel.")
+    ret, frame = cap.read()
+    if not ret:
+        logger.error("Failed to capture image from camera.")
+        cap.release()
+        cv2.destroyAllWindows()
+        return None
+    
+    img_path = "captured_auto.jpg" # Changed filename to avoid overwriting "captured.jpg"
+    cv2.imwrite(img_path, frame)
+    
+    cap.release()
+    cv2.destroyAllWindows()
+    logger.info(f"Image captured automatically and saved as {img_path}")
+    return frame
 
 def DocTRRead(frame):
     """
@@ -45,7 +72,7 @@ def DocTRRead(frame):
     try:
         # Using ocr.ocr directly
         doc = DocumentFile.from_images(CAPTURED_IMAGE_PATH)
-        result = doctrmodel(doc)
+        result = model(doc)
         output = result.export()
     except Exception as e:
         print(f"Error during OCR processing: {e}")
@@ -77,4 +104,7 @@ def DocTRRead(frame):
     # Concaténer les mots en une seule chaîne
     result = " ".join(words)
     print(result)
-    return(result)
+    return result
+
+frame = capture_image()
+print(DocTRRead(frame))
