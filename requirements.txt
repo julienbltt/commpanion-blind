@@ -1,4 +1,5 @@
-﻿aiohappyeyeballs==2.6.1
+accelerate==1.9.0
+aiohappyeyeballs==2.6.1
 aiohttp==3.12.13
 aiosignal==1.4.0
 annotated-types==0.7.0
@@ -10,6 +11,7 @@ audio2numpy==0.1.2
 backcall==0.2.0
 backoff==2.2.1
 beautifulsoup4==4.13.4
+bitsandbytes==0.46.1
 botocore==1.39.3
 certifi==2025.4.26
 cffi==1.17.1
@@ -83,6 +85,7 @@ pypiwin32==223
 pyreadline3==3.5.4
 PySocks==1.7.1
 python-dateutil==2.9.0.post0
+python-doctr==1.0.0
 pyttsx3==2.98
 pytz==2025.2
 pywin32==310
@@ -122,12 +125,9 @@ transformers==4.53.1
 typing-inspection==0.4.1
 typing_extensions==4.14.0
 tzdata==2025.2
+ultralytics==8.3.169
 urllib3==2.4.0
 wcwidth==0.2.13
 wsproto==1.2.0
 xxhash==3.5.0
 yarl==1.20.1
-paddlepaddle==3.0.0
-paddleocr
-bitsandbytes
-accelerate

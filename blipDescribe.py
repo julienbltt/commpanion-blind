@@ -65,7 +65,7 @@ def capture_image():
         cv2.destroyAllWindows()
         return None
     
-    img_path = "captured_auto.jpg" # Changed filename to avoid overwriting "captured.jpg"
+    img_path = "captured.jpg" # Changed filename to avoid overwriting "captured.jpg"
     cv2.imwrite(img_path, frame)
     
     cap.release()
@@ -73,23 +73,6 @@ def capture_image():
     logger.info(f"Image captured automatically and saved as {img_path}")
     return img_path
 
-    """while True:
-        ret, frame = cap.read()
-        
-        if not ret:
-            continue
-        cv2.imshow("Live Feed - Press SPACE to capture", frame)
-        key = cv2.waitKey(1)
-        if key == 27:  # ESC
-            cap.release()
-            cv2.destroyAllWindows()
-            return None
-        elif key == 32:  # SPACE
-            img_path = "captured.jpg"
-            cv2.imwrite(img_path, frame)
-            cap.release()
-            cv2.destroyAllWindows()
-            return img_path"""
 # Add a setup function to initialize once
 def initialize_blip():
     return load_instructblip_model()

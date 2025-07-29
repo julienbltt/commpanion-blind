@@ -5,14 +5,16 @@ import time
 import stt
 from recorder import AudioRecorder
 import classify
+from blip import BlipModel
 from tts import talk_stream
-from blipDescribe import initialize_blip, generate_caption, capture_image
-
+#from blipDescribe import initialize_blip, generate_caption, capture_image  # this is the larger blip model
+from yolov8Objects import mainObjectLocator, capture_image
+from DocTRText import capture_image_docTR, DocTRRead
 
 
 class VoiceAssistant:
     def __init__(self):
-        self.blip_processor, self.blip_model, self.blip_device = initialize_blip()
+        #self.blip_processor, self.blip_model, self.blip_device = initialize_blip() # this is the larger blip model
 
         self.glasses = None
         self.is_processing = False
@@ -30,7 +32,8 @@ class VoiceAssistant:
         )
         self.stt_app = stt.SpeechToTextApplication("audio")
         self.classifier = classify.IntentClassifier()
-
+        self.blip = BlipModel(camera_id=2)
+        self.blip.load()
         # Download wake word model once (if needed)
         WakeWordDetector.download_models()
 
@@ -69,7 +72,7 @@ class VoiceAssistant:
     def process_voice_command(self):
         """Record, transcribe, and handle LLM response"""
         try:
-            time.sleep(0.2)  # Small delay to stabilize
+            time.sleep(0.1)  # Small delay to stabilize
 
             print("Starting recording...")
             self.recorder.start_recording()
@@ -94,7 +97,31 @@ class VoiceAssistant:
                 return
 
             intent,confidence = self.classifier.classify(prompt)
+            match intent:
+                case "read_text":
+                    # text = self.ocr.capture_and_extract_text()
+                    print("Intent recognised: Reading text")
+                    img = capture_image_docTR()
+                    text = DocTRRead(img)
+                    print(text or "No text detected")
+                    talk_stream(text or "No text detected.")
+                case "locate_object":
+                    print("Intent recognised: Locating Object")
+                    objectLocation = mainObjectLocator(prompt)
+                    talk_stream(objectLocation)
+                case "describe_scene":
+                    print("Intent recognised: Describing Scene")
+                    image_path, caption = self.blip.capture_and_describe(auto_capture=True)
+                    talk_stream(caption)
+                case "activate_detection_collision":
+                    print("Collision detection activated")
+                    talk_stream("Classifying intent as 'activate detection collision'.")
+                    # Add collision detection functionality here
+                case "other":
+                    talk_stream("I don't understand that command. Please try again.")
 
+            
+            """
             if intent == "read_text":
                 print("📖 Intent recognised: Reading text...")
             
@@ -108,13 +135,18 @@ class VoiceAssistant:
                 else:
                     talk_stream("I couldn't capture the image.")
             #===========================End Blip Code==================================
+            #===========================
+            elif intent == "locate_Object":
+                print("Intent recognised: Locating Object")
+                objectLocation = mainObjectLocator(prompt)
+                talk_stream(objectLocation)
             else:
                 print(f"🧠 Intent recognized: {intent}")
                 response = "For the momnent I can only read text. If you want me to read text, please ask me, aiming the glasses at the text you want me to read."
                 talk_stream(response)
                 tac = time.time()
                 print(f"Total time: {(tac - tic):.2f} seconds")
-
+            """
         except Exception as e:
             print(f"❌ Error in voice processing: {e}")
             import traceback

@@ -26,9 +26,9 @@ class IntentClassifier:
                 "What does the writing say on that sign?",
                 "Tell me exactly what the label says.",
                 "Could you read the message displayed in front of me?",
-                "What are the words written on this surface?"#, #new prompts
-                #"Read this page",
-                #"Read the words shown here"
+                "What are the words written on this surface?",
+                "Read this page",
+                "Read the words shown here"
             ],
             "describe_scene": [
                 "Can you describe what's happening around me?",
@@ -36,9 +36,19 @@ class IntentClassifier:
                 "Give me a detailed description of the scene.",
                 "Describe the setting and objects nearby.",
                 "Tell me what the surroundings look like.",
-                "What's visible in the current environment?"#,#new prompts
-                #"Describe what you see",
-                #"What does this room look like?"
+                "What's visible in the current environment?",
+                "Describe what you see",
+                "What does this room look like?"
+            ],
+            "locate_object":[
+                "Where is the bin",
+                "Can you point me to the door",
+                "Can you find my glasses",
+                "Where is the bottle",
+                "Where is my pen",
+                "Where are the toilets",
+                "What is on my left",
+                "What is on my right"
             ],
             "activate_detection_collision": [
                 "Please enable obstacle and hazard detection.",
@@ -167,7 +177,7 @@ class IntentClassifier:
             second_score = sorted_sims[1][1] if len(sorted_sims) > 1 else 0.0
             
             # Check if difference is sufficient and minimum score is met
-            if top_score - second_score <= self.margin_threshold or top_score < 0.2:
+            if top_score - second_score <= self.margin_threshold or top_score < 0.1:
                 return "other", top_score - second_score
             
             return top_intent, top_score
