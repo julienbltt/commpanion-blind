@@ -7,8 +7,9 @@ from recorder import AudioRecorder
 from classify import IntentClassifier
 from tts import talk_stream
 from blip import BlipModel
-from ocr import TesseractOCR
-from DocTRText import capture_image, DocTRRead
+from yolov8Objects import locate_objects_in_frame
+from ocr import DocTROCR
+from camera_manager import CameraManager
 
 class VoiceAssistant:
     def __init__(self):
@@ -28,14 +29,15 @@ class VoiceAssistant:
         )
         self.stt_app = SpeechToTextApplication("audio")
         self.classifier = IntentClassifier(model_name="all-distilroberta-v1") 
-        self.blip = BlipModel(camera_id=1)
+        self.blip = BlipModel()
         self.blip.load()
-        self.ocr = TesseractOCR(camera_id=1)
+        self.ocr = DocTROCR()
         WakeWordDetector.download_models() # Download default models if not present
         self.detector = WakeWordDetector(
             wakeword_models=["models\hey_lucy.onnx"]
         )
         self.detector.register_callback("hey_lucy", self.on_wake_word_detected)
+        self.camera_manager = CameraManager(camera_id=2, image_dir="image")
 
         # Auto-select default microphone
         default_mic = self.recorder.mic_selector.get_default_microphone()
@@ -68,7 +70,6 @@ class VoiceAssistant:
         """Record, transcribe, and handle LLM response"""
         try:
             time.sleep(0.1)  # Small delay to stabilize
-
             print("Starting recording...")
             self.recorder.start_recording()
             while self.recorder.is_recording:
@@ -76,8 +77,6 @@ class VoiceAssistant:
             print("Recording finished!")
             self.recorder.save_recording("audio/last_rec.wav")
             self.recorder.cleanup()
-
-            tic = time.time()
 
             print("Transcribing audio file...")
             prompt = self.stt_app.transcribe()
@@ -95,22 +94,35 @@ class VoiceAssistant:
 
             match intent:
                 case "read_text":
-                    # text = self.ocr.capture_and_extract_text()
-                    img = capture_image()
-                    text = DocTRRead(img)
-                    talk_stream(text or "No text detected.")
+                    image_path = self.camera_manager.take_picture()
+                    if image_path:
+                        caption = self.ocr.extract_text_from_frame(image_path)
+                        talk_stream(caption)
+                        self.camera_manager.cleanup_images()
+                    else:
+                        talk_stream("I did not manage to capture an image. Try again.")
                 case "locate_object":
-                    talk_stream("Classifying intent as 'locate object'.")  
-                    # Add object locating functionality here
+                    image_path = self.camera_manager.take_picture()
+                    if image_path:
+                        caption = locate_objects_in_frame(prompt,image_path)
+                        talk_stream(caption)
+                        self.camera_manager.cleanup_images()
+                    else:
+                        talk_stream("I did not manage to capture an image. Try again.")
                 case "describe_scene":
-                    image_path, caption = self.blip.capture_and_describe(auto_capture=True)
-                    talk_stream(caption)
+                    image_path = self.camera_manager.take_picture()
+                    if image_path:
+                        caption = self.blip.generate_caption(image_path)
+                        print(f"Generated caption: {caption}")
+                        talk_stream(caption)
+                        self.camera_manager.cleanup_images()
+                    else:
+                        talk_stream("I did not manage to capture an image. Try again.")
                 case "activate_detection_collision":
                     talk_stream("Classifying intent as 'activate detection collision'.")
                     # Add collision detection functionality here
                 case "other":
                     talk_stream("I don't understand that command. Please try again.")
-
         except Exception as e:
             print(f"❌ Error in voice processing: {e}")
             import traceback

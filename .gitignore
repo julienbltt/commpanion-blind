@@ -194,3 +194,5 @@ cython_debug/
 .cursorindexingignore
 
 models
+
+yolov8l-oiv7.pt
